@@ -15,58 +15,57 @@
 import Foundation
 
 
-public class SendBuffer<Element> {
+open class SendBuffer<Element> {
 
-	public var onAdded: (Element -> ())?
-	public var onLocked: (Element -> ())?
-	public var onRemoved: (Element -> ())?
+	open var onAdded: ((Element) -> ())?
+	open var onLocked: ((Element) -> ())?
+	open var onRemoved: ((Element) -> ())?
 
-	public var onFlush: ((
-			items: [Element],
-			commit: ()->(),
-			rollback: ()->(),
-			queue: NSOperationQueue) -> ())?
+	open var onFlush: ((
+			_ items: [Element],
+			_ commit: @escaping ()->(),
+			_ rollback: @escaping ()->(),
+			_ queue: OperationQueue) -> ())?
 
-	public var currentElements: [Element] {
+	open var currentElements: [Element] {
 		return buffer
 	}
 
-	public var lockedElements: [Element] {
+	open var lockedElements: [Element] {
 		return locked
 	}
 
-	public var isFull: Bool {
+	open var isFull: Bool {
 		return self.buffer.count >= bufferSize
 	}
 
-	public var isFlushing: Bool {
+	open var isFlushing: Bool {
 		return !self.locked.isEmpty
 	}
 
-	public var size: Int {
+	open var size: Int {
 		return bufferSize
 	}
 
-	public var autoFlush = true
+	open var autoFlush = true
 
-	private let bufferSize: Int
-	private let bufferQueue: NSOperationQueue
-	private var doFlushWhenCompleted = false
+	fileprivate let bufferSize: Int
+	fileprivate let bufferQueue: OperationQueue
+	fileprivate var doFlushWhenCompleted = false
 
-	private var buffer: [Element]
-	private var locked: [Element]
+	fileprivate var buffer: [Element]
+	fileprivate var locked: [Element]
 
-	private let queueKey   = ("send-buffer-queue-key" as NSString).UTF8String
-	private var queueValue = ("send-buffer-queue" as NSString).UTF8String
+	fileprivate let queueKey = DispatchSpecificKey<Void>()
 
 	public init(bufferSize: Int) {
 		self.bufferSize = bufferSize
 
 		let queueName = "sendbuffer-serial"
-		let queue = dispatch_queue_create(queueName, DISPATCH_QUEUE_SERIAL)
-		dispatch_queue_set_specific(queue, queueKey, &queueValue, nil)
+		let queue = DispatchQueue(label: queueName, attributes: [])
+		queue.setSpecific(key: queueKey, value: ())
 
-		bufferQueue = NSOperationQueue()
+		bufferQueue = OperationQueue()
 		bufferQueue.name = queueName
 		bufferQueue.maxConcurrentOperationCount = 1
 		bufferQueue.underlyingQueue = queue
@@ -78,8 +77,8 @@ public class SendBuffer<Element> {
 		locked.reserveCapacity(bufferSize)
 	}
 
-	public func add(e: Element) {
-		bufferQueue.addOperationWithBlock {
+	open func add(_ e: Element) {
+		bufferQueue.addOperation {
 			self.buffer.append(e)
 			self.onAdded?(e)
 
@@ -89,8 +88,8 @@ public class SendBuffer<Element> {
 		}
 	}
 
-	public func flush() {
-		bufferQueue.addOperationWithBlock {
+	open func flush() {
+		bufferQueue.addOperation {
 			if self.isFlushing {
 				// if several flush calls happened from different threads
 				// then a new flush will be done when the current one is completed
@@ -102,28 +101,28 @@ public class SendBuffer<Element> {
 
 			let range = 0..<itemCount
 			self.locked += Array(self.buffer[range])
-			self.buffer.removeRange(range)
+			self.buffer.removeSubrange(range)
 
 			if let onLocked = self.onLocked {
 				self.locked.forEach(onLocked)
 			}
 
 			self.onFlush?(
-				items: self.locked,
-				commit: self.commitFlush,
-				rollback: self.rollbackFlush,
-				queue: self.bufferQueue)
+				self.locked,
+				self.commitFlush,
+				self.rollbackFlush,
+				self.bufferQueue)
 		}
 	}
 
-	private func commitFlush() {
+	fileprivate func commitFlush() {
 		assertOnBufferQueue()
 
 		if let onRemoved = self.onRemoved {
 			locked.forEach(onRemoved)
 		}
 
-		locked.removeAll(keepCapacity: true)
+		locked.removeAll(keepingCapacity: true)
 
 		if autoFlush || doFlushWhenCompleted {
 			flushIfNeeded()
@@ -131,21 +130,21 @@ public class SendBuffer<Element> {
 		}
 	}
 
-	private func rollbackFlush() {
+	fileprivate func rollbackFlush() {
 		assertOnBufferQueue()
 
 		// insert them back in the head. Keep same order
-		locked.reverse().forEach {
-			buffer.insert($0, atIndex: 0)
+		locked.reversed().forEach {
+			buffer.insert($0, at: 0)
 			onAdded?($0)
 		}
 
-		locked.removeAll(keepCapacity: true)
+		locked.removeAll(keepingCapacity: true)
 
 		doFlushWhenCompleted = false
 	}
 
-	private func flushIfNeeded() {
+	fileprivate func flushIfNeeded() {
 		if isFull {
 			if isFlushing {
 				// Flush is needed but the queue is flushing right now.
@@ -158,9 +157,9 @@ public class SendBuffer<Element> {
 		}
 	}
 
-	private func assertOnBufferQueue() {
-		let value = dispatch_get_specific(queueKey)
-		assert(value == &queueValue)
+	fileprivate func assertOnBufferQueue() {
+		let value: Void? = DispatchQueue.getSpecific(key: queueKey)
+		assert(value != nil)
 	}
 
 }
