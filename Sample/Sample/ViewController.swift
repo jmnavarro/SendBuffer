@@ -26,11 +26,11 @@ class ViewController: UIViewController, UITableViewDataSource {
 
 	class Item: NSObject {
 		let desc: String
-		let ts: NSTimeInterval
+		let ts: TimeInterval
 
 		init(desc: String) {
 			self.desc = desc
-			ts = NSDate().timeIntervalSince1970
+			ts = Date().timeIntervalSince1970
 		}
 
 		override var debugDescription: String {
@@ -47,18 +47,18 @@ class ViewController: UIViewController, UITableViewDataSource {
 	var sentItems = [Item]()
 	var itemSec = 0
 
-	@IBAction func produce(sender: AnyObject) {
+	@IBAction func produce(_ sender: AnyObject) {
 		itemSec += 1
 		let itemid = "\(self.itemSec)"
 
-		let priority = DISPATCH_QUEUE_PRIORITY_DEFAULT
-		dispatch_async(dispatch_get_global_queue(priority, 0)) {
+		let priority = DispatchQoS.`default`.qosClass
+		DispatchQueue.global(qos: priority).async {
 			self.buffer.add(Item(desc: "\(itemid)"))
 			sleep(1)
 		}
 	}
 
-	@IBAction func consume(sender: AnyObject) {
+	@IBAction func consume(_ sender: AnyObject) {
 		buffer.flush()
 	}
 
@@ -84,18 +84,18 @@ class ViewController: UIViewController, UITableViewDataSource {
 		buffer.onFlush = { (items, commit, rollback, queue) in
 			self.refreshUI()
 
-			let priority = DISPATCH_QUEUE_PRIORITY_DEFAULT
-			dispatch_async(dispatch_get_global_queue(priority, 0)) {
+			let priority = DispatchQoS.`default`.qosClass
+			DispatchQueue.global(qos: priority).async {
 
 				for i in 0..<5 {
-					dispatch_async(dispatch_get_main_queue()) {
+					DispatchQueue.main.async {
 						self.sendingLabel.text = "Sending (\(5-i))"
 					}
 					sleep(1)
 				}
 
-				dispatch_async(dispatch_get_main_queue()) {
-					if self.errorOnSend.on {
+				DispatchQueue.main.async {
+					if self.errorOnSend.isOn {
 						self.sendingLabel.text = "Failed"
 					}
 					else {
@@ -103,8 +103,8 @@ class ViewController: UIViewController, UITableViewDataSource {
 					}
 				}
 
-				dispatch_async(queue.underlyingQueue!) {
-					if self.errorOnSend.on {
+				queue.underlyingQueue!.async {
+					if self.errorOnSend.isOn {
 						rollback()
 					}
 					else {
@@ -113,18 +113,17 @@ class ViewController: UIViewController, UITableViewDataSource {
 				}
 			}
 		}
-
 	}
 
 	func refreshUI() {
-		dispatch_async(dispatch_get_main_queue()) {
+		DispatchQueue.main.async {
 			self.bufferTable.reloadData()
 			self.sendingTable.reloadData()
 			self.sentTable.reloadData()
 		}
 	}
 
-	func tableArray(tableView: UITableView) -> [Item] {
+	func tableArray(_ tableView: UITableView) -> [Item] {
 		if tableView === bufferTable {
 			return buffer.currentElements
 		}
@@ -136,14 +135,14 @@ class ViewController: UIViewController, UITableViewDataSource {
 		}
 	}
 
-	func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+	func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
 		return tableArray(tableView).count
 	}
 
-	func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
+	func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
 		let elements = tableArray(tableView)
 
-		let cell = tableView.dequeueReusableCellWithIdentifier("item", forIndexPath: indexPath)
+		let cell = tableView.dequeueReusableCell(withIdentifier: "item", for: indexPath)
 
 		if indexPath.row < elements.count {
 			cell.textLabel?.text = elements[indexPath.row].description
@@ -155,12 +154,12 @@ class ViewController: UIViewController, UITableViewDataSource {
 		return cell
 	}
 
-	@IBAction func autoFlushSwitch(sender: UISwitch) {
-		buffer.autoFlush = sender.on
+	@IBAction func autoFlushSwitch(_ sender: UISwitch) {
+		buffer.autoFlush = sender.isOn
 		if buffer.autoFlush && buffer.currentElements.count >= buffer.size {
 			buffer.flush()
 		}
-		flushButton.hidden = sender.on
+		flushButton.isHidden = sender.isOn
 	}
 
 }
